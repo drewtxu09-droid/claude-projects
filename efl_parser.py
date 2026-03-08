@@ -106,11 +106,21 @@ def find_ec1(text: str):
             if p and "¢" in p:
                 return p
 
-    # 4Change path — value on the Energy Charge label row
+    # 4Change / tiered path — scan up to 6 lines after the Energy Charge label
+    # (sidebar labels like "Precio de" / "electricidad" may be injected between
+    #  the label line and the tier sub-rows by pdfplumber on single-page layouts)
     for i, line in enumerate(lines):
         if re.search(r"energy charge|cargo de energ", line, re.IGNORECASE):
-            for check in [line] + (lines[i + 1:i + 2] if i + 1 < len(lines) else []):
-                p = first_price_in(check)
+            # Check the label line itself first
+            p = first_price_in(line)
+            if p and "¢" in p and parse_num(p) is not None:
+                return p
+            # Then scan following lines, stopping if we hit the TDU section
+            for j in range(i + 1, min(i + 6, len(lines))):
+                next_line = lines[j]
+                if re.search(r"\bTDU\b|suministro", next_line, re.IGNORECASE):
+                    break
+                p = first_price_in(next_line)
                 if p and "¢" in p and parse_num(p) is not None:
                     return p
     return None
@@ -225,8 +235,15 @@ def find_print_date(text: str):
 
 
 def find_version(text: str):
-    """V20XXXXXX stamp — TXU only; returns None for 4Change (no version field)."""
+    """
+    Version stamp formats:
+      TXU (old):  V20XXXXXX   e.g. V20210729
+      TXU/Ambit:  MMDDYY_TDU / MMDDYYYY_UNB / MMDDYY_UNBUN  e.g. 072921_UNB
+    """
     m = re.search(r"\b(V20\d{6})\b", text)
+    if m:
+        return m.group(1)
+    m = re.search(r"\b(\d{6,8}_[A-Z][A-Z0-9]*)\b", text)
     return m.group(1) if m else None
 
 
