@@ -1,9 +1,9 @@
 @echo off
 echo Installing dependencies...
-pip install -r requirements.txt
+py -m pip install -r requirements.txt
 echo.
 echo Starting Oncor TDU Dashboard...
 echo Open your browser to http://localhost:8050
 echo.
-python app.py
+py app.py
 pause
