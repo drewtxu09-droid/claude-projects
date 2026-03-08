@@ -154,11 +154,19 @@ def scrape_latest_rates() -> dict | None:
                 "transmission_cents_kwh": _parse_float(r'(?:transmission|tcrf)[^\d]*([\d]+\.[\d]{3,})', text),
             }
 
-            if all(v is not None for v in parsed.values()):
+            # Validate parsed values are in realistic ranges before accepting
+            valid = (
+                all(v is not None for v in parsed.values())
+                and 0.5  <= parsed["customer_charge"]        <= 10.0
+                and 0.5  <= parsed["metering_charge"]        <= 10.0
+                and 0.5  <= parsed["distribution_cents_kwh"] <= 15.0
+                and 0.5  <= parsed["transmission_cents_kwh"] <= 15.0
+            )
+            if valid:
                 print(f"  Parsed from {name}: {parsed}")
                 return parsed
             else:
-                print(f"  Partial parse from {name}: {parsed}")
+                print(f"  Parsed values out of expected range, skipping: {parsed}")
         except Exception as e:
             print(f"  Error parsing {name}: {e}")
 
