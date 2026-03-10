@@ -2,8 +2,8 @@
 ## Standard Operating Procedure & Process Document
 
 **Document Owner:** Price Comparison Team
-**Last Updated:** March 9, 2026
-**Version:** 2.0
+**Last Updated:** March 10, 2026
+**Version:** 2.1
 
 ---
 
@@ -11,12 +11,15 @@
 
 This document outlines the standard operating procedure for running automated electricity rate scrapes from [comparepower.com](https://www.comparepower.com) for zip code **76051**. The scrape tools collect all available electricity plans, sort them by monthly bill estimate (1,000 kWh usage), and produce formatted Excel reports that highlight a specific provider's pricing position relative to the market.
 
-Two scrape tools are maintained:
+Two scrape tools and one monitor tool are maintained:
 
-| Tool | Provider Focus | Highlight Color | Output Folder |
-|---|---|---|---|
-| `ComparePower_4CHE_Scrape.py` | 4Change Energy | Light Purple | `4CHE/` |
-| `ComparePower_TXUE_Scrape.py` | TXU Energy | Yellow | `TXUE/` |
+| Tool | Type | Provider Focus | Highlight Color | Output Folder |
+|---|---|---|---|---|
+| `ComparePower_4CHE_Scrape.py` | Full scrape | 4Change Energy | Light Purple | `4CHE/` |
+| `ComparePower_TXUE_Scrape.py` | Full scrape | TXU Energy | Yellow | `TXUE/` |
+| `ComparePower_4CHE_Monitor.py` | Monitor only | 4Change Energy | Light Purple | `4CHE/` (only when not #1) |
+
+The **monitor** runs every 30 minutes and only saves an Excel file and sends a Teams alert when 4Change is NOT #1. If 4Change is #1, it exits silently with no files written.
 
 ---
 
@@ -43,17 +46,23 @@ pip show selenium pandas openpyxl
 
 ```
 Price Comparison/
-├── ComparePower_4CHE_Scrape.py       ← 4Change Energy scrape script
+├── ComparePower_4CHE_Scrape.py       ← 4Change Energy full scrape (always saves Excel)
+├── ComparePower_4CHE_Monitor.py      ← 4Change Energy monitor (only saves/alerts when not #1)
 ├── ComparePower_TXUE_Scrape.py       ← TXU Energy scrape script
-├── run_4CHE_alert.bat                ← Batch file to run 4CHE scrape (used by Task Scheduler)
-├── setup_scheduled_tasks.bat         ← Run once (as admin) to register daily scheduled tasks
+├── run_4CHE_alert.bat                ← Batch runner for full scrape (3x daily Task Scheduler)
+├── run_4CHE_monitor.bat              ← Batch runner for monitor (every 30 min Task Scheduler)
+├── setup_scheduled_tasks.bat         ← Run once (as admin) to register 3x daily scrape tasks
+├── setup_monitor_task.bat            ← Run once (as admin) to register 30-min monitor task
 ├── 4CHE/                             ← 4Change Energy output files
-│   ├── ComparePower_4CHE_76051_YYYYMMDD_HHMMam/pm.xlsx
-│   └── scrape_log.txt                ← Auto-generated log of all scheduled runs
+│   ├── ComparePower_4CHE_76051_YYYYMMDD_HHMM.xlsx   ← Military time (e.g. 1722)
+│   ├── scrape_log.txt                ← Log for scheduled full scrape runs
+│   └── monitor_log.txt              ← Log for 30-min monitor runs
 ├── TXUE/                             ← TXU Energy output files
-│   └── ComparePower_TXUE_76051_YYYYMMDD_HHMMam/pm.xlsx
+│   └── ComparePower_TXUE_76051_YYYYMMDD_HHMM.xlsx
 └── Process Docs/
-    └── ComparePower Scrape.md        ← This document
+    ├── ComparePower Scrape.md        ← This document
+    ├── Scheduled Tasks Setup.md      ← Setup guide for 3x daily scrape tasks
+    └── Scheduled Tasks Monitor.md    ← Setup guide for 30-min monitor task
 
 OneDrive - Vistra Corp/
 └── ComparePower Alerts/              ← Trigger files written here when 4Change is NOT #1
@@ -119,7 +128,12 @@ OneDrive - Vistra Corp/
 
 ### Option B — Run via Batch File
 
-Double-click `run_4CHE_alert.bat` in the `Price Comparison` folder. This runs the 4CHE scrape and logs all output to `4CHE/scrape_log.txt`. This is the same method used by the scheduled tasks.
+| Batch File | Runs | Logs To |
+|---|---|---|
+| `run_4CHE_alert.bat` | Full scrape — always saves Excel | `4CHE/scrape_log.txt` |
+| `run_4CHE_monitor.bat` | Monitor — only saves Excel/alerts when not #1 | `4CHE/monitor_log.txt` |
+
+Double-click either file in the `Price Comparison` folder to run manually. These are also the same files called by their respective Task Scheduler tasks.
 
 ### Option C — Run via Claude Code (AI Terminal)
 
@@ -141,15 +155,15 @@ ComparePower_[PROVIDER]_[ZIP]_[DATE]_[TIME].xlsx
 
 **Example:**
 ```
-ComparePower_4CHE_76051_20260309_650pm.xlsx
+ComparePower_4CHE_76051_20260310_1722.xlsx
 ```
 
 | Segment | Meaning |
 |---|---|
 | `4CHE` or `TXUE` | Provider focus of the scrape |
 | `76051` | Zip code scraped |
-| `20260309` | Date run (YYYYMMDD) |
-| `650pm` | Time run (no leading zero, am/pm) |
+| `20260310` | Date run (YYYYMMDD) |
+| `1722` | Time run in military time (HHMM — 24-hour, zero-padded) |
 
 ### Excel Formatting
 
@@ -225,20 +239,26 @@ For script issues, changes to zip codes, new provider tracking, or additional re
 
 ## 12. Automated Scheduling & Alerts (4CHE Only)
 
-The 4Change Energy scrape is configured to run automatically **three times per day** via Windows Task Scheduler, and send a **Microsoft Teams alert** whenever 4Change is not the #1 ranked provider.
+Two separate Task Scheduler automations are available for 4Change Energy monitoring. They can run independently or together.
 
-### Scheduled Run Times
+### Automation Comparison
 
-| Task Name | Time |
-|---|---|
-| ComparePower 4CHE 8am | 8:00 AM daily |
-| ComparePower 4CHE 12pm | 12:00 PM daily |
-| ComparePower 4CHE 5pm | 5:00 PM daily |
+| | Full Scrape (3x Daily) | Monitor (Every 30 Min) |
+|---|---|---|
+| **Script** | `ComparePower_4CHE_Scrape.py` | `ComparePower_4CHE_Monitor.py` |
+| **Batch File** | `run_4CHE_alert.bat` | `run_4CHE_monitor.bat` |
+| **Setup File** | `setup_scheduled_tasks.bat` | `setup_monitor_task.bat` |
+| **Schedule** | 8 AM, 12 PM, 5 PM daily | Every 30 minutes |
+| **Excel saved when #1** | Always | Never |
+| **Excel saved when not #1** | Always | Yes |
+| **Teams alert when not #1** | Yes | Yes |
+| **Log file** | `4CHE/scrape_log.txt` | `4CHE/monitor_log.txt` |
+| **Setup doc** | `Scheduled Tasks Setup.md` | `Scheduled Tasks Monitor.md` |
 
-### How the Alert Works
+### How the Alert Works (Both Tools)
 
-1. The scrape runs at each scheduled time via `run_4CHE_alert.bat`
-2. If 4Change Energy is **not ranked #1**, the script writes a JSON file to:
+1. The script runs at its scheduled time via its batch file
+2. If 4Change Energy is **not ranked #1**, the script writes a JSON trigger file to:
    ```
    C:\Users\XV1S\OneDrive - Vistra Corp\ComparePower Alerts\
    ```
@@ -249,30 +269,24 @@ The 4Change Energy scrape is configured to run automatically **three times per d
    - Timestamp of the check
 5. Power Automate deletes the trigger file after sending
 
-If 4Change **is** #1, no alert is sent and no file is written.
+### Setting Up Scheduled Tasks (One-Time Each)
 
-### Setting Up the Scheduled Tasks (One-Time)
-
+**Full Scrape (3x daily):**
 1. Navigate to `C:\Users\XV1S\Desktop\Claude\Price Comparison\`
 2. **Right-click** `setup_scheduled_tasks.bat` → **Run as administrator**
-3. Three tasks will be registered in Windows Task Scheduler automatically
-4. To verify: open **Task Scheduler** → check under Task Scheduler Library for the three `ComparePower 4CHE` tasks
+3. See `Scheduled Tasks Setup.md` for the full click-by-click guide
 
-### Viewing the Run Log
+**Monitor (every 30 min):**
+1. Navigate to `C:\Users\XV1S\Desktop\Claude\Price Comparison\`
+2. **Right-click** `setup_monitor_task.bat` → **Run as administrator**
+3. See `Scheduled Tasks Monitor.md` for the full click-by-click guide
 
-All scheduled runs append output to:
-```
-C:\Users\XV1S\Desktop\Claude\Price Comparison\4CHE\scrape_log.txt
-```
-Check this file to confirm the scrape ran and see what rank 4Change received.
+### Viewing the Run Logs
 
-### Changing the Schedule
-
-To update run times or add/remove runs:
-1. Open **Task Scheduler** (search in Start menu)
-2. Find the task under Task Scheduler Library
-3. Double-click → **Triggers** tab → edit the time
-4. Or delete and re-run `setup_scheduled_tasks.bat` after editing the times in that file
+| Log | Path |
+|---|---|
+| Full scrape log | `C:\Users\XV1S\Desktop\Claude\Price Comparison\4CHE\scrape_log.txt` |
+| Monitor log | `C:\Users\XV1S\Desktop\Claude\Price Comparison\4CHE\monitor_log.txt` |
 
 ---
 
