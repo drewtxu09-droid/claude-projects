@@ -3,7 +3,7 @@
 
 **Document Owner:** Price Comparison Team
 **Last Updated:** March 9, 2026
-**Version:** 1.0
+**Version:** 2.0
 
 ---
 
@@ -45,12 +45,19 @@ pip show selenium pandas openpyxl
 Price Comparison/
 ├── ComparePower_4CHE_Scrape.py       ← 4Change Energy scrape script
 ├── ComparePower_TXUE_Scrape.py       ← TXU Energy scrape script
+├── run_4CHE_alert.bat                ← Batch file to run 4CHE scrape (used by Task Scheduler)
+├── setup_scheduled_tasks.bat         ← Run once (as admin) to register daily scheduled tasks
 ├── 4CHE/                             ← 4Change Energy output files
-│   └── ComparePower_4CHE_76051_YYYYMMDD_HHMMam/pm.xlsx
+│   ├── ComparePower_4CHE_76051_YYYYMMDD_HHMMam/pm.xlsx
+│   └── scrape_log.txt                ← Auto-generated log of all scheduled runs
 ├── TXUE/                             ← TXU Energy output files
 │   └── ComparePower_TXUE_76051_YYYYMMDD_HHMMam/pm.xlsx
 └── Process Docs/
     └── ComparePower Scrape.md        ← This document
+
+OneDrive - Vistra Corp/
+└── ComparePower Alerts/              ← Trigger files written here when 4Change is NOT #1
+    └── alert_YYYYMMDD_HHMMSS.json   ← Picked up by Power Automate → Teams alert sent
 ```
 
 ---
@@ -110,7 +117,11 @@ Price Comparison/
    python ComparePower_4CHE_Scrape.py && python ComparePower_TXUE_Scrape.py
    ```
 
-### Option B — Run via Claude Code (AI Terminal)
+### Option B — Run via Batch File
+
+Double-click `run_4CHE_alert.bat` in the `Price Comparison` folder. This runs the 4CHE scrape and logs all output to `4CHE/scrape_log.txt`. This is the same method used by the scheduled tasks.
+
+### Option C — Run via Claude Code (AI Terminal)
 
 Open Claude Code and paste the run command into the chat terminal. Claude can execute both scripts and report results directly.
 
@@ -209,6 +220,203 @@ Note: The output file name and comparison URL will update automatically to refle
 ## 11. Contact / Support
 
 For script issues, changes to zip codes, new provider tracking, or additional report formats, contact the developer or submit a request through Claude Code.
+
+---
+
+## 12. Automated Scheduling & Alerts (4CHE Only)
+
+The 4Change Energy scrape is configured to run automatically **three times per day** via Windows Task Scheduler, and send a **Microsoft Teams alert** whenever 4Change is not the #1 ranked provider.
+
+### Scheduled Run Times
+
+| Task Name | Time |
+|---|---|
+| ComparePower 4CHE 8am | 8:00 AM daily |
+| ComparePower 4CHE 12pm | 12:00 PM daily |
+| ComparePower 4CHE 5pm | 5:00 PM daily |
+
+### How the Alert Works
+
+1. The scrape runs at each scheduled time via `run_4CHE_alert.bat`
+2. If 4Change Energy is **not ranked #1**, the script writes a JSON file to:
+   ```
+   C:\Users\XV1S\OneDrive - Vistra Corp\ComparePower Alerts\
+   ```
+3. Power Automate detects the new file via an **OneDrive for Business** trigger
+4. Power Automate posts a Teams message to `drew.wilburn@txu.com` via Flow bot with:
+   - 4Change's current rank, plan name, price, and estimated bill
+   - The #1 provider's name, price, and estimated bill
+   - Timestamp of the check
+5. Power Automate deletes the trigger file after sending
+
+If 4Change **is** #1, no alert is sent and no file is written.
+
+### Setting Up the Scheduled Tasks (One-Time)
+
+1. Navigate to `C:\Users\XV1S\Desktop\Claude\Price Comparison\`
+2. **Right-click** `setup_scheduled_tasks.bat` → **Run as administrator**
+3. Three tasks will be registered in Windows Task Scheduler automatically
+4. To verify: open **Task Scheduler** → check under Task Scheduler Library for the three `ComparePower 4CHE` tasks
+
+### Viewing the Run Log
+
+All scheduled runs append output to:
+```
+C:\Users\XV1S\Desktop\Claude\Price Comparison\4CHE\scrape_log.txt
+```
+Check this file to confirm the scrape ran and see what rank 4Change received.
+
+### Changing the Schedule
+
+To update run times or add/remove runs:
+1. Open **Task Scheduler** (search in Start menu)
+2. Find the task under Task Scheduler Library
+3. Double-click → **Triggers** tab → edit the time
+4. Or delete and re-run `setup_scheduled_tasks.bat` after editing the times in that file
+
+---
+
+## 13. Power Automate Flow Setup — Step-by-Step Guide
+
+This section documents how to build or rebuild the Power Automate flow that sends the Teams alert. Follow these steps exactly.
+
+### Prerequisites
+
+- Access to [make.powerautomate.com](https://make.powerautomate.com) with your Vistra/TXU credentials
+- The folder `C:\Users\XV1S\OneDrive - Vistra Corp\ComparePower Alerts\` must exist (create it if not)
+
+---
+
+### Step 1 — Create a New Flow
+
+1. Go to [make.powerautomate.com](https://make.powerautomate.com)
+2. In the left sidebar, click **"My flows"**
+3. Click **"+ New flow"** at the top
+4. Select **"Automated cloud flow"**
+5. In the dialog:
+   - **Flow name:** `ComparePower 4CHE Alert`
+   - **Search for a trigger:** type `when a file is created`
+   - Select **"When a file is created (OneDrive for Business)"**
+6. Click **"Create"**
+
+---
+
+### Step 2 — Configure the Trigger
+
+You are now in the flow editor. The first step is the OneDrive trigger.
+
+1. Click on the **"When a file is created (OneDrive for Business)"** trigger card to expand it
+2. Click the **Folder** field
+3. Click the folder icon that appears to the right of the field
+4. Browse and select: **ComparePower Alerts**
+5. Leave all other settings as default
+
+---
+
+### Step 3 — Add "Get File Content"
+
+1. Click **"+ New step"** below the trigger
+2. In the search bar, type: `get file content`
+3. Under **OneDrive for Business**, select **"Get file content (OneDrive for Business)"**
+4. Click the **File** field
+5. In the dynamic content panel that appears on the right, click **"Path"** (listed under the trigger)
+   - The field will show `Path` as a blue dynamic content pill
+
+---
+
+### Step 4 — Add "Parse JSON"
+
+1. Click **"+ New step"**
+2. Search for: `parse json`
+3. Select **"Parse JSON"** (Data Operations)
+4. Click the **Content** field
+5. Click **"Expression"** tab (next to "Dynamic content" tab) in the panel on the right
+6. Paste this expression exactly:
+   ```
+   base64ToString(body('Get_file_content')?['$content'])
+   ```
+7. Click **"OK"**
+8. Click the **Schema** field and paste this entire block:
+   ```json
+   {
+     "type": "object",
+     "properties": {
+       "rank": {"type": "integer"},
+       "plan": {"type": "string"},
+       "price": {"type": "number"},
+       "bill": {"type": "number"},
+       "leader": {"type": "string"},
+       "leader_price": {"type": "number"},
+       "leader_bill": {"type": "number"},
+       "timestamp": {"type": "string"}
+     }
+   }
+   ```
+
+---
+
+### Step 5 — Add the Teams Message
+
+1. Click **"+ New step"**
+2. Search for: `post message in a chat`
+3. Select **"Post message in a chat or channel (Microsoft Teams)"**
+4. Set the fields as follows:
+
+   | Field | Value |
+   |---|---|
+   | Post as | Flow bot |
+   | Post in | Chat with Flow bot |
+   | Recipient | `drew.wilburn@txu.com` |
+
+5. Click in the **Message** field and build the message by typing text and inserting dynamic content fields (click the **Dynamic content** tab, then click the field name to insert it as a pill):
+
+   ```
+   ⚠️ 4Change Energy is NOT #1 on ComparePower (76051)
+
+   Rank: #[rank]
+   Plan: [plan]
+   Price: [price]¢/kWh | Est. Bill: $[bill]/mo
+
+   Currently #1: [leader] at [leader_price]¢/kWh ($[leader_bill]/mo)
+   Checked: [timestamp]
+   ```
+
+   Replace each `[bracketed]` item with the matching dynamic content pill from the **Parse JSON** section.
+
+---
+
+### Step 6 — Add "Delete File" (Cleanup)
+
+1. Click **"+ New step"**
+2. Search for: `delete file`
+3. Under **OneDrive for Business**, select **"Delete file (OneDrive for Business)"**
+4. Click the **File** field
+5. In the dynamic content panel, click **"Path"** (from the trigger, not Parse JSON)
+   - This ensures the trigger file is deleted after the alert is sent
+
+---
+
+### Step 7 — Save and Test
+
+1. Click **"Save"** in the top right
+2. To test manually:
+   - Copy any small `.json` file into `C:\Users\XV1S\OneDrive - Vistra Corp\ComparePower Alerts\`
+   - Wait ~30–60 seconds for OneDrive to sync and the flow to trigger
+   - Check your Teams chat with Flow bot for the message
+   - Check the folder — the file should be deleted automatically
+3. Alternatively, run `run_4CHE_alert.bat` when 4Change is not #1 and wait for the alert
+
+---
+
+### Troubleshooting the Flow
+
+| Issue | Likely Cause | Resolution |
+|---|---|---|
+| Flow doesn't trigger | File didn't sync to OneDrive cloud | Check OneDrive sync status in system tray; ensure sync is not paused |
+| "Expression invalid" error | Typo in the base64 expression | Re-paste: `base64ToString(body('Get_file_content')?['$content'])` |
+| Teams message not received | Wrong recipient or Flow bot not accepted | Confirm `drew.wilburn@txu.com` is correct; open Teams and accept the Flow bot chat if prompted |
+| File not deleted | Delete step not configured with trigger Path | Ensure Delete file uses Path from the trigger (Step 1), not Parse JSON |
+| Flow ran but message is blank | Dynamic content fields not linked | Re-open the Teams step and re-link each field to Parse JSON dynamic content |
 
 ---
 

@@ -6,6 +6,8 @@ exports to Excel sorted by price, and reports 4Change Energy's ranking.
 
 import time
 import re
+import os
+import json
 from datetime import datetime
 import pandas as pd
 from openpyxl import load_workbook
@@ -19,6 +21,27 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 ZIP_CODE = "76051"
+ONEDRIVE_ALERT_FOLDER = r"C:\Users\XV1S\OneDrive - Vistra Corp\ComparePower Alerts"
+
+
+def write_alert_file(rank, plan, price, bill, leader, leader_price, leader_bill):
+    """Write a JSON trigger file to OneDrive so Power Automate sends a Teams alert."""
+    os.makedirs(ONEDRIVE_ALERT_FOLDER, exist_ok=True)
+    filename = f"alert_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    filepath = os.path.join(ONEDRIVE_ALERT_FOLDER, filename)
+    payload = {
+        "rank": rank,
+        "plan": plan,
+        "price": round(price, 2),
+        "bill": round(bill, 2),
+        "leader": leader,
+        "leader_price": round(leader_price, 2),
+        "leader_bill": round(leader_bill, 2),
+        "timestamp": datetime.now().strftime("%Y-%m-%d %I:%M %p"),
+    }
+    with open(filepath, "w") as f:
+        json.dump(payload, f, indent=2)
+    print(f"  Alert file written to OneDrive: {filename}")
 
 def make_output_filename():
     now = datetime.now()
@@ -329,12 +352,21 @@ def build_excel(plans, output_file):
         print(f"\n  4Change Energy rank: #{target_rank} ({target_plan or 'N/A'}) — {target_price:.2f}¢/kWh  (${target_bill:.2f}/mo)")
 
         if target_rank == 1:
-            print("  4Change Energy IS the cheapest provider!")
+            print("  4Change Energy IS the cheapest provider! No alert sent.")
         else:
             diff_price = target_price - top_price
             diff_bill  = target_bill  - top_bill
             print(f"  4Change is NOT #1. Cheapest is {df.iloc[0]['Provider']} at {top_price:.2f}¢/kWh.")
             print(f"  4Change pays +{diff_price:.2f}¢/kWh more  (+${diff_bill:.2f}/mo more than #1).")
+            write_alert_file(
+                rank=target_rank,
+                plan=target_plan or "N/A",
+                price=target_price,
+                bill=target_bill,
+                leader=df.iloc[0]["Provider"],
+                leader_price=top_price,
+                leader_bill=top_bill,
+            )
 
     print(f"{'='*60}\n")
 
