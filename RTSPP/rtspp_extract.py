@@ -9,9 +9,11 @@ Usage:
 
 import win32com.client
 import subprocess
+import calendar
 import time
 import sys
 import os
+from datetime import date
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -98,6 +100,57 @@ def format_date(value):
 
 
 # ---------------------------------------------------------------------------
+# Populate ReadMe sheet with current-month dates
+# ---------------------------------------------------------------------------
+
+def populate_readme(rtspp_wb):
+    """
+    Determine the current month and write all date fields to the ReadMe sheet.
+
+    ReadMe layout:
+      A1  - Last day of month  (e.g. 3/31/2026)       <- ToDate for SAP
+      B1  - Month + Year label (e.g. March 2026)
+      A2  - YYYY - MM MonthName (e.g. 2026 - 03 March)
+      B2  - YYYYMMDD of last day (e.g. 20260331)
+      C2  - First day of month  (e.g. 3/1/2026)       <- FromDate for SAP
+      E2  - Save filename (e.g. 20260331_RTSPP_Extract.xlsx)
+      B3  - Year (e.g. 2026)
+    """
+    today = date.today()
+
+    # Always target the previous month (this tool runs between the 2nd-5th
+    # of a new month to pull the prior month's completed data)
+    if today.month == 1:
+        year, month = today.year - 1, 12
+    else:
+        year, month = today.year, today.month - 1
+
+    last_day_n = calendar.monthrange(year, month)[1]   # number of days in month
+
+    first_day  = date(year, month, 1)
+    last_day   = date(year, month, last_day_n)
+
+    month_name    = first_day.strftime("%B")            # "March"
+    month_num     = first_day.strftime("%m")            # "03"
+    last_yyyymmdd = last_day.strftime("%Y%m%d")         # "20260331"
+
+    # Date strings without leading zeros to match existing format
+    first_str = f"{month}/1/{year}"                     # "3/1/2026"
+    last_str  = f"{month}/{last_day_n}/{year}"          # "3/31/2026"
+
+    readme = rtspp_wb.Sheets("ReadMe")
+    readme.Range("A1").Value = last_str
+    readme.Range("B1").Value = f"{month_name} {year}"
+    readme.Range("A2").Value = f"{year} - {month_num} {month_name}"
+    readme.Range("B2").Value = last_yyyymmdd
+    readme.Range("C2").Value = first_str
+    readme.Range("E2").Value = f"{last_yyyymmdd}_RTSPP_Extract.xlsx"
+    readme.Range("B3").Value = year
+
+    print(f"  ReadMe updated: {month_name} {year}  ({first_str} – {last_str})")
+
+
+# ---------------------------------------------------------------------------
 # Main extract
 # ---------------------------------------------------------------------------
 
@@ -111,9 +164,12 @@ def extract():
     if not rtspp_wb:
         raise RuntimeError(f"Could not find '{RTSPP_FILENAME}'. Is it open in Excel?")
 
-    readme  = rtspp_wb.Sheets("ReadMe")
-    from_date = format_date(readme.Range("C2").Value)
-    to_date   = format_date(readme.Range("A1").Value)
+    print("Populating ReadMe dates...")
+    populate_readme(rtspp_wb)
+
+    readme    = rtspp_wb.Sheets("ReadMe")
+    from_date = str(readme.Range("C2").Value)
+    to_date   = str(readme.Range("A1").Value)
     print(f"  From: {from_date}  To: {to_date}")
 
     # Clear extract sheet
