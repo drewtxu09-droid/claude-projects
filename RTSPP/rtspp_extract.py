@@ -265,12 +265,18 @@ def save_extract():
     save_file = readme.Range("E2").Value
     save_year = readme.Range("B3").Value
 
-    save_path = os.path.join(
+    save_dir = os.path.join(
         SAVE_PATH_BASE,
         f"{save_year} EFL Filing",
-        "Monthly Extracts",
-        str(save_file)
+        "Monthly Extracts"
     )
+    save_path = os.path.join(save_dir, str(save_file))
+
+    # Create the year and Monthly Extracts folders if they don't exist
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+        print(f"  Created folder: {save_dir}")
+
     print(f"  Saving to: {save_path}")
 
     # Copy Extract sheet to a new workbook and save it
