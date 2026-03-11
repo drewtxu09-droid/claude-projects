@@ -1,6 +1,8 @@
 @echo off
 cd /d "%~dp0"
-pip install flask -q
+set PYTHON="C:\Program Files\Python312\python.exe"
+set PIP="C:\Program Files\Python312\Scripts\pip.exe"
+%PYTHON% -m pip install flask -q
 start http://localhost:5050
-python launcher.py
+%PYTHON% launcher.py
 pause
