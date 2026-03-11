@@ -1,13 +1,14 @@
 # RTSPP Extract Tool — Standard Operating Procedure
-**Version:** 1.1
+**Version:** 1.2
 **Process Owner:** Rate Management
-**Run Frequency:** Monthly (2nd – 5th of each month)
+**Run Frequency:** Monthly (automated on the 2nd; manual fallback via batch file)
 **Last Updated:** 2026-03-10
 
 | Version | Date | Change |
 |---------|------|--------|
 | 1.0 | 2026-03-10 | Initial release — Python replacement for VBA macro |
 | 1.1 | 2026-03-10 | Auto-create year and Monthly Extracts folders on network share if missing |
+| 1.2 | 2026-03-10 | v2 script: Excel opens/saves hidden, SAP reuses existing connection, Teams alert on completion, Windows Task Scheduler support |
 
 ---
 
@@ -17,10 +18,10 @@ This tool automates the monthly extraction of Real-Time Settlement Point Price (
 
 ---
 
-## 2. What the Tool Does
+## 2. What the Tool Does (v2)
 
 ### Step 1 — Date Population (automatic)
-The script checks today's date and automatically targets the **previous calendar month**. It writes the following fields into the `ReadMe` sheet of the Excel workbook — no manual date entry is needed.
+The script checks today's date and automatically targets the **previous calendar month**. It writes the following fields into the `ReadMe` sheet — no manual date entry is needed.
 
 | Cell | Value Written | Example (run in March 2026) |
 |------|--------------|------------------------------|
@@ -32,8 +33,16 @@ The script checks today's date and automatically targets the **previous calendar
 | E2   | Output filename | 20260228_RTSPP_Extract.xlsx |
 | B3   | Year | 2026 |
 
-### Step 2 — SAP Data Extract (automatic)
-The script launches SAP GUI, connects to **TXUE ISU Prod**, and navigates to transaction `/NEEDM08`. It then pulls RTSPP data for the following four load zone profiles in sequence:
+### Step 2 — Excel Opens Automatically (hidden)
+The script opens `RTSPP_Extract_Tool_DW.xlsm` on its own — **the workbook does not need to be open beforehand**. Excel runs entirely in the background and is never visible on screen.
+
+### Step 3 — SAP Connection (automatic, handles existing sessions)
+The script connects to SAP intelligently:
+- **SAP not running** → launches SAP GUI minimized and connects
+- **SAP running, no TXUE ISU connection** → opens a new connection
+- **SAP running with existing TXUE ISU session** → creates a new child session, leaving your existing work untouched
+
+It then navigates to transaction `/NEEDM08` and pulls RTSPP data for all four load zones:
 
 | Load Zone | SAP Profile ID |
 |-----------|---------------|
@@ -42,17 +51,20 @@ The script launches SAP GUI, connects to **TXUE ISU Prod**, and navigates to tra
 | LZ_South   | 400000001 |
 | LZ_West    | 400000002 |
 
-For each zone, the script:
-- Sets the profile ID and date range in SAP
-- Refreshes the data tree and opens the EDM Profile export
-- Copies the interval price data from the SAP-opened Excel file into the `Extract` sheet of `RTSPP_Extract_Tool_DW.xlsm`
-- Hides the temporary SAP workbook
+For each zone, the script sets the profile and date range, refreshes the tree, opens the EDM Profile export, copies the interval price data into the `Extract` sheet, and hides the temporary SAP workbook.
 
-### Step 3 — Review (manual)
-The user reviews the `Extract` sheet to confirm the dates and data look correct before saving.
+### Step 4 — Save and Notify (automatic)
+After all four zones are extracted:
+- The workbook saves automatically in the background
+- Excel remains hidden — **it does not pop up on screen**
+- A **Microsoft Teams notification** is sent confirming the extract is ready for review
+- If an error occurs at any point, a Teams alert is sent with the error details
 
-### Step 4 — Save to Network Share (semi-automatic)
-A second batch file copies the `Extract` sheet into a standalone `.xlsx` file and saves it to:
+### Step 5 — Review (manual)
+You open `RTSPP_Extract_Tool_DW.xlsm` manually when you receive the Teams notification and review the `Extract` sheet.
+
+### Step 6 — Save to Network Share (manual)
+A separate batch file copies the `Extract` sheet into a standalone `.xlsx` file and saves it to:
 
 ```
 \\ddcnasshares\c_product\RATE MANAGEMENT\aaaa_LARR_POLR\
@@ -65,54 +77,94 @@ The filename is auto-generated (e.g., `20260228_RTSPP_Extract.xlsx`). If the yea
 
 ## 3. Prerequisites
 
-### Software Required
+### One-Time Setup
 | Requirement | Notes |
 |------------|-------|
 | Python 3.x | Must be installed and on PATH |
-| pywin32 library | Install once via: `pip install pywin32` |
+| pywin32 library | Run once: `pip install pywin32` |
 | SAP GUI | Must be installed at `C:\Program Files (x86)\SAP\FrontEnd\SAPgui\` |
-| SAP GUI Scripting | Must be enabled in SAP GUI Options → Accessibility & Scripting |
-| Microsoft Excel | Must be open with `RTSPP_Extract_Tool_DW.xlsm` loaded |
-| Network access | Must have access to `\\ddcnasshares\...` for the save step |
+| SAP GUI Scripting | Enable in SAP GUI Options → Accessibility & Scripting |
+| Teams Webhook URL | Set `TEAMS_WEBHOOK_URL` in `rtspp_extract_v2.py` (see Section 5) |
+| Workbook path | Set `RTSPP_FILE_PATH` in `rtspp_extract_v2.py` |
+| Scheduled Task | Run `setup_scheduled_task.bat` once as Administrator |
 
-### SAP Access Required
-- Active login credentials for **TXUE ISU Prod**
-- Access to transaction `/NEEDM08`
+### Each Run
+| Requirement | Notes |
+|------------|-------|
+| SAP credentials | Active login for TXUE ISU Prod (script handles login prompt) |
+| Network / VPN | Required for SAP connection and saving to the network share |
 
 ---
 
 ## 4. Files
 
-| File | Location | Purpose |
-|------|----------|---------|
-| `rtspp_extract.py` | `RTSPP\` | Main Python script |
-| `run_rtspp_extract.bat` | `RTSPP\` | Runs the SAP extract |
-| `save_rtspp_extract.bat` | `RTSPP\` | Saves the extract to the network share |
-| `RTSPP_Extract_Tool_DW.xlsm` | User's working folder | Source Excel workbook (not in this repo) |
+| File | Purpose |
+|------|---------|
+| `rtspp_extract_v2.py` | Main automated script (current version) |
+| `run_rtspp_extract_v2.bat` | Manually trigger the extract |
+| `save_rtspp_extract.bat` | Save the extract to the network share (manual step) |
+| `setup_scheduled_task.bat` | Run once as Admin to register the monthly scheduled task |
+| `setup_scheduled_task.ps1` | PowerShell called by the setup bat |
+| `rtspp_extract.py` | v1 script — preserved for reference |
+| `RTSPP_Extract_Tool_DW.xlsm` | Source Excel workbook (not in this repo) |
 
 ---
 
-## 5. Timing
+## 5. Teams Webhook Setup (one-time)
 
-- Run between the **2nd and 5th of each month**
+1. Open the Teams channel where you want notifications
+2. Click `...` next to the channel name → **Connectors** (or **Workflows**)
+3. Search for **Incoming Webhook** → Configure
+4. Give it a name (e.g. `RTSPP Extract`) → **Create**
+5. Copy the webhook URL
+6. Open `rtspp_extract_v2.py` and paste the URL into:
+   ```python
+   TEAMS_WEBHOOK_URL = "https://your-tenant.webhook.office.com/..."
+   ```
+
+---
+
+## 6. Scheduled Task Setup (one-time)
+
+Right-click `setup_scheduled_task.bat` → **Run as Administrator**.
+
+This registers a Windows Scheduled Task with the following settings:
+
+| Setting | Value |
+|---------|-------|
+| Task name | RTSPP Monthly Extract |
+| Runs on | 2nd of every month at 8:00 AM |
+| If PC was off/asleep on the 2nd | Runs automatically on next wake/login |
+| Retry on failure | Once, after 10 minutes |
+
+To view or edit the task: open **Task Scheduler** → Task Scheduler Library → `RTSPP Monthly Extract`.
+
+---
+
+## 7. Timing
+
+- Scheduled to run automatically on the **2nd of each month at 8:00 AM**
+- If the computer was offline on the 2nd, the task runs on the **next login or wake**
 - Data for the prior month is not complete in SAP until the overnight batch filing runs on the 2nd
 - Do not run on the 1st — data will be incomplete
 
 ---
 
-## 6. Troubleshooting
+## 8. Troubleshooting
 
-| Error | Likely Cause | Fix |
-|-------|-------------|-----|
-| `Excel is not open` | Workbook not loaded | Open Excel and `RTSPP_Extract_Tool_DW.xlsm` before running |
-| `Could not find RTSPP_Extract_Tool_DW` | Wrong filename or not open | Confirm exact filename matches |
-| `EDM Profile workbook not found` | SAP did not export in time | SAP may be slow — re-run; increase `time.sleep` in script if persistent |
-| SAP login prompt appears | Not logged into SAP | Log into SAP ISU Prod manually before running the batch file |
+| Error / Symptom | Likely Cause | Fix |
+|----------------|-------------|-----|
+| `Workbook not found` | `RTSPP_FILE_PATH` not set correctly | Update the path in `rtspp_extract_v2.py` |
+| `SAP GUI failed to launch` | SAP not installed or path wrong | Confirm SAP is installed; update `SAP_EXE` in script if needed |
+| SAP login prompt appears | Not logged in | Log into SAP ISU Prod, then re-run |
+| `EDM Profile workbook not found` | SAP was slow to export | Re-run; if persistent, increase the `time.sleep` wait in `find_edm_workbook()` |
+| Teams notification not received | Webhook URL not set or invalid | Confirm `TEAMS_WEBHOOK_URL` is set correctly in the script |
 | `Permission denied` on save | No access to network share | Confirm VPN is connected and share path is accessible |
 | Data appears in wrong columns | SAP EDM Profile layout changed | Contact the script owner — column mappings may need updating |
+| Scheduled task did not run | Task Scheduler disabled or PC offline | Check Task Scheduler history; run `run_rtspp_extract_v2.bat` manually |
 
 ---
 
-## 7. Contact / Escalation
+## 9. Contact / Escalation
 
 For SAP running errors, see the `ReadMe` sheet in `RTSPP_Extract_Tool_DW.xlsm` — escalation contact is noted there.
