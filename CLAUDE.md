@@ -77,6 +77,29 @@ If yes, add a new entry to the `SCRIPTS` list in `launcher/launcher.py` with:
 - `description` — one sentence explaining what the script does and any requirements
 - `color` — use the same color as other cards in the same group for consistency
 
+## Chat History (`chat history/`)
+
+All conversations are saved to `C:\Users\XV1S\Desktop\Claude\chat history\`.
+
+### File Naming
+```
+YYYY-MM-DD_HHmm_Short-Topic-Name.md
+```
+Example: `2026-03-11_1831_Launcher-Dashboard-Build.md`
+
+- Date and time use **military time** (24-hour)
+- Topic name is a short hyphenated description of what the conversation covered
+- When the user says **"new chat"**, start a new file with a fresh timestamp and topic name
+
+### Format
+Each file uses this structure:
+```
+# Chat History — YYYY-MM-DD HH:MM
+---
+**User:** ...
+**Claude:** ...
+```
+
 ## Git & GitHub
 
 - Remote: https://github.com/drewtxu09-droid/claude-projects
