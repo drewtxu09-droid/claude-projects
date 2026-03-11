@@ -35,7 +35,7 @@ from datetime import date, datetime
 # =============================================================================
 
 # Full path to the RTSPP Excel workbook
-RTSPP_FILE_PATH = r"C:\Users\xv1s\path\to\RTSPP_Extract_Tool_DW.xlsm"
+RTSPP_FILE_PATH = r"Y:\RATE MANAGEMENT\aaaa_LARR_POLR\Annual EFL POLR Filing\RTSPP_Extract_Tool_DW - Copy.xlsm"
 
 # OneDrive folder that Power Automate is listening to for Teams alerts
 # Power Automate flow: When file created → Get content → Parse JSON → Post to Teams → Delete file
@@ -48,7 +48,7 @@ ONEDRIVE_ALERT_FOLDER = r"C:\Users\XV1S\OneDrive - Vistra Corp\RTSPP Alerts"
 SAP_EXE        = r"C:\Program Files (x86)\SAP\FrontEnd\SAPgui\saplogon.exe"
 SAP_SYSTEM     = "01)  TXUE ISU Prod"
 SAP_TEMP_FILE  = r"C:\Users\xv1s\AppData\Local\Temp\~SAP{C0C070F9-F809-4A2F-A740-AF95E87C7455}.tmp"
-SAVE_PATH_BASE = r"\\ddcnasshares\c_product\RATE MANAGEMENT\aaaa_LARR_POLR\Annual EFL POLR Filing"
+SAVE_PATH_BASE = r"Y:\RATE MANAGEMENT\aaaa_LARR_POLR\Annual EFL POLR Filing"
 
 # SAP element paths
 TREE_BASE = (
