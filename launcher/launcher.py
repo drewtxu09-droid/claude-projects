@@ -58,16 +58,17 @@ SCRIPTS = [
         "description": "Save extracted RTSPP data to network share",
         "icon": "upload",
     },
-    {
-        "id": "rtspp_run",
-        "group": "RTSPP Extract",
-        "group_color": "#8b5cf6",
-        "name": "Extract (Legacy)",
-        "file": "run_rtspp_extract.bat",
-        "dir": os.path.join(BASE, "RTSPP"),
-        "description": "Original SAP extract — requires Excel + SAP GUI scripting",
-        "icon": "clock",
-    },
+    # ARCHIVED — hidden from dashboard, kept for reference
+    # {
+    #     "id": "rtspp_run",
+    #     "group": "RTSPP Extract",
+    #     "group_color": "#8b5cf6",
+    #     "name": "Extract (Legacy)",
+    #     "file": "run_rtspp_extract.bat",
+    #     "dir": os.path.join(BASE, "RTSPP"),
+    #     "description": "Original SAP extract — requires Excel + SAP GUI scripting",
+    #     "icon": "clock",
+    # },
     {
         "id": "rtspp_schedule",
         "group": "RTSPP Extract",
@@ -229,10 +230,31 @@ header {
 /* ── GRID ── */
 .grid-area { padding: 18px 24px 40px; }
 #grid {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 4), 172px);
   gap: 16px;
 }
+.col-picker {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: #8b949e;
+}
+.col-picker.visible { display: flex; }
+.col-btn {
+  width: 28px; height: 28px;
+  border-radius: 5px;
+  border: 1px solid #30363d;
+  background: transparent;
+  color: #8b949e;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.col-btn:hover { border-color: #f0a030; color: #f0a030; }
+.col-btn.active { border-color: #f0a030; color: #f0a030; background: rgba(240,160,48,0.12); }
 
 /* ── CARD ── */
 .app-card {
@@ -368,6 +390,13 @@ header {
     <span class="brand-title">Rate Management</span>
   </div>
   <div class="header-actions">
+    <div class="col-picker" id="colPicker">
+      <span>Columns:</span>
+      <button class="col-btn" onclick="setCols(3)">3</button>
+      <button class="col-btn" onclick="setCols(4)">4</button>
+      <button class="col-btn" onclick="setCols(5)">5</button>
+      <button class="col-btn" onclick="setCols(6)">6</button>
+    </div>
     <button class="reset-btn" id="resetBtn" onclick="resetLayout()">Reset Layout</button>
     <button class="customize-btn" id="customizeBtn" onclick="toggleCustomize()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
@@ -446,14 +475,28 @@ grid.addEventListener('drop', e => {
   saveOrder();
 });
 
+// ── Columns ──────────────────────────────────────────────
+function setCols(n) {
+  grid.style.setProperty('--cols', n);
+  localStorage.setItem('launcher_cols', n);
+  document.querySelectorAll('.col-btn').forEach(b => {
+    b.classList.toggle('active', parseInt(b.textContent) === n);
+  });
+}
+
+function loadCols() {
+  const saved = parseInt(localStorage.getItem('launcher_cols') || '4');
+  setCols(saved);
+}
+
 // ── Customize toggle ─────────────────────────────────────
 function toggleCustomize() {
   const isOn = grid.classList.toggle('customizing');
   const btn = document.getElementById('customizeBtn');
   const resetBtn = document.getElementById('resetBtn');
   const hint = document.getElementById('dragHint');
+  const colPicker = document.getElementById('colPicker');
   grid.querySelectorAll('.app-card').forEach(c => { c.draggable = isOn; });
-  btn.textContent = isOn ? '✓ Done' : '';
   if (isOn) {
     btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><polyline points="20 6 9 17 4 12"/></svg> Done';
   } else {
@@ -462,6 +505,7 @@ function toggleCustomize() {
   btn.classList.toggle('active', isOn);
   resetBtn.classList.toggle('visible', isOn);
   hint.classList.toggle('visible', isOn);
+  colPicker.classList.toggle('visible', isOn);
 }
 
 // ── Layout persistence ───────────────────────────────────
@@ -512,6 +556,7 @@ async function runScript(id, btn) {
 }
 
 loadOrder();
+loadCols();
 </script>
 </body>
 </html>"""
