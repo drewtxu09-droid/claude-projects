@@ -23,13 +23,11 @@ Setup:
 import win32com.client
 import subprocess
 import calendar
-import urllib.request
-import urllib.error
 import json
 import time
 import sys
 import os
-from datetime import date
+from datetime import date, datetime
 
 
 # =============================================================================
@@ -39,14 +37,9 @@ from datetime import date
 # Full path to the RTSPP Excel workbook
 RTSPP_FILE_PATH = r"C:\Users\xv1s\path\to\RTSPP_Extract_Tool_DW.xlsm"
 
-# Microsoft Teams Incoming Webhook URL
-# To create one:
-#   1. Open the Teams channel you want alerts sent to
-#   2. Click the "..." next to the channel name → Connectors (or Workflows)
-#   3. Search for "Incoming Webhook" → Configure
-#   4. Give it a name (e.g. "RTSPP Extract") → Create
-#   5. Copy the URL and paste it below
-TEAMS_WEBHOOK_URL = "https://your-tenant.webhook.office.com/webhookb2/PASTE-YOUR-URL-HERE"
+# OneDrive folder that Power Automate is listening to for Teams alerts
+# Power Automate flow: When file created → Get content → Parse JSON → Post to Teams → Delete file
+ONEDRIVE_ALERT_FOLDER = r"C:\Users\XV1S\OneDrive - Vistra Corp\RTSPP Alerts"
 
 # =============================================================================
 # SYSTEM CONFIGURATION — only change if your environment differs
@@ -92,60 +85,47 @@ XL_CALC_AUTO   = -4105
 
 
 # =============================================================================
-# Teams Notification
+# Teams Alert via OneDrive + Power Automate
 # =============================================================================
 
-def send_teams_alert(success, month_label=None, from_date=None, to_date=None, error=None):
-    """Send a Teams notification card on success or failure."""
-    if not TEAMS_WEBHOOK_URL or "PASTE-YOUR-URL" in TEAMS_WEBHOOK_URL:
-        print("  [Teams] Webhook URL not configured — skipping notification.")
-        return
+def write_alert_file(success, month_label=None, from_date=None, to_date=None, error=None):
+    """
+    Drop a JSON file into the OneDrive RTSPP Alerts folder.
+    Power Automate detects the new file, parses the JSON, posts a Teams
+    message, and deletes the file.
 
-    if success:
-        payload = {
-            "@type": "MessageCard",
-            "@context": "http://schema.org/extensions",
-            "themeColor": "28A745",
-            "summary": "RTSPP Extract Complete",
-            "sections": [{
-                "activityTitle": "RTSPP Extract — Ready for Review",
-                "activitySubtitle": f"Month: {month_label}",
-                "facts": [
-                    {"name": "Date Range", "value": f"{from_date}  →  {to_date}"},
-                    {"name": "Status",     "value": "Extract complete. Review the Extract sheet, then run the Save step."},
-                    {"name": "Workbook",   "value": os.path.basename(RTSPP_FILE_PATH)},
-                ],
-                "markdown": True
-            }]
+    JSON schema (for the Power Automate Parse JSON step):
+    {
+        "type": "object",
+        "properties": {
+            "status":     { "type": "string" },
+            "month":      { "type": "string" },
+            "from_date":  { "type": "string" },
+            "to_date":    { "type": "string" },
+            "workbook":   { "type": "string" },
+            "timestamp":  { "type": "string" },
+            "error":      {}
         }
-    else:
-        payload = {
-            "@type": "MessageCard",
-            "@context": "http://schema.org/extensions",
-            "themeColor": "DC3545",
-            "summary": "RTSPP Extract FAILED",
-            "sections": [{
-                "activityTitle": "RTSPP Extract — FAILED",
-                "activitySubtitle": "Manual intervention required",
-                "facts": [
-                    {"name": "Error",  "value": str(error)},
-                    {"name": "Action", "value": "Check the workbook and re-run manually."},
-                ],
-                "markdown": True
-            }]
-        }
+    }
+    """
+    os.makedirs(ONEDRIVE_ALERT_FOLDER, exist_ok=True)
+    filename = f"alert_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    filepath = os.path.join(ONEDRIVE_ALERT_FOLDER, filename)
 
-    try:
-        data = json.dumps(payload).encode("utf-8")
-        req  = urllib.request.Request(
-            TEAMS_WEBHOOK_URL,
-            data=data,
-            headers={"Content-Type": "application/json"}
-        )
-        urllib.request.urlopen(req, timeout=10)
-        print(f"  [Teams] Notification sent.")
-    except Exception as e:
-        print(f"  [Teams] Could not send notification: {e}")
+    payload = {
+        "status":    "success" if success else "failed",
+        "month":     month_label or "",
+        "from_date": from_date  or "",
+        "to_date":   to_date    or "",
+        "workbook":  os.path.basename(RTSPP_FILE_PATH),
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "error":     str(error) if error else None,
+    }
+
+    with open(filepath, "w") as f:
+        json.dump(payload, f, indent=2)
+
+    print(f"  [Alert] Written to OneDrive: {filename}")
 
 
 # =============================================================================
@@ -338,12 +318,12 @@ def extract():
         rtspp_wb.Save()
         print(f"  Workbook saved.")
 
-        print("\nExtract complete — Teams notification sent.")
-        send_teams_alert(True, month_label, from_date, to_date)
+        print("\nExtract complete — Teams alert queued via OneDrive.")
+        write_alert_file(True, month_label, from_date, to_date)
 
     except Exception as e:
         print(f"\nERROR: {e}")
-        send_teams_alert(False, month_label, from_date, to_date, error=e)
+        write_alert_file(False, month_label, from_date, to_date, error=e)
         if xl:
             xl.DisplayAlerts = True
         sys.exit(1)

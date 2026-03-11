@@ -16,15 +16,14 @@ Change it to the actual full path of your workbook.
 
 ---
 
-### Setup Step 2 — Set the Teams webhook URL
-In the same file, update:
-```python
-TEAMS_WEBHOOK_URL = "https://your-tenant.webhook.office.com/..."
+### Setup Step 2 — Confirm the OneDrive alert folder exists
+The script writes alert files to:
 ```
-To get the URL:
-1. Go to your Teams channel → click `...` → **Connectors** (or **Workflows**)
-2. Search **Incoming Webhook** → Configure → give it a name → **Create**
-3. Copy the URL and paste it above
+C:\Users\XV1S\OneDrive - Vistra Corp\RTSPP Alerts
+```
+This folder is already created. No changes needed unless you move it — if you do, update `ONEDRIVE_ALERT_FOLDER` in `rtspp_extract_v2.py`.
+
+Make sure your Power Automate flow is pointed at this folder (When a file is created → **RTSPP Alerts**).
 
 ---
 
@@ -96,14 +95,13 @@ Extract complete — Teams notification sent.
 ---
 
 ### Step 5 — Wait for the Teams notification
-When the extract finishes you will receive a Teams message in the configured channel:
+When the extract finishes, the script drops a JSON file into your **RTSPP Alerts** OneDrive folder. Power Automate picks it up and posts a Teams message like:
 
 > **RTSPP Extract — Ready for Review**
-> Month: February 2026
-> Date Range: 2/1/2026 → 2/28/2026
-> Status: Extract complete. Review the Extract sheet, then run the Save step.
+> Month: February 2026 | Range: 2/1/2026 – 2/28/2026
+> Workbook saved. Open it to review, then run the Save step.
 
-> If you see a red **RTSPP Extract — FAILED** message instead, check the error details in the notification and refer to the Troubleshooting section below.
+> If you receive a **RTSPP Extract — FAILED** message instead, check the error details and refer to the Troubleshooting section below.
 
 ---
 
@@ -162,7 +160,7 @@ Navigate to the Monthly Extracts folder on the network share and confirm the fil
 | What you see | What to do |
 |-------------|-----------|
 | Red Teams alert — FAILED | Read the error in the notification; refer to SOP troubleshooting section |
-| No Teams notification received | Check that `TEAMS_WEBHOOK_URL` is set in `rtspp_extract_v2.py` |
+| No Teams notification received | Check that the Power Automate flow is on and pointed at the `RTSPP Alerts` OneDrive folder |
 | Command window shows `ERROR: Workbook not found` | Update `RTSPP_FILE_PATH` in `rtspp_extract_v2.py` |
 | SAP does not launch | Open SAP manually, log in, then re-run the batch file |
 | `EDM Profile workbook not found` | SAP was slow — wait 30 seconds and re-run |

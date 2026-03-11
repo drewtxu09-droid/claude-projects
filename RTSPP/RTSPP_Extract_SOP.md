@@ -1,5 +1,5 @@
 # RTSPP Extract Tool — Standard Operating Procedure
-**Version:** 1.2
+**Version:** 1.3
 **Process Owner:** Rate Management
 **Run Frequency:** Monthly (automated on the 2nd; manual fallback via batch file)
 **Last Updated:** 2026-03-10
@@ -9,6 +9,7 @@
 | 1.0 | 2026-03-10 | Initial release — Python replacement for VBA macro |
 | 1.1 | 2026-03-10 | Auto-create year and Monthly Extracts folders on network share if missing |
 | 1.2 | 2026-03-10 | v2 script: Excel opens/saves hidden, SAP reuses existing connection, Teams alert on completion, Windows Task Scheduler support |
+| 1.3 | 2026-03-10 | Replace Teams webhook with OneDrive file-drop → Power Automate flow (no premium Teams required) |
 
 ---
 
@@ -110,17 +111,54 @@ The filename is auto-generated (e.g., `20260228_RTSPP_Extract.xlsx`). If the yea
 
 ---
 
-## 5. Teams Webhook Setup (one-time)
+## 5. Teams Alert Setup (one-time, via OneDrive + Power Automate)
 
-1. Open the Teams channel where you want notifications
-2. Click `...` next to the channel name → **Connectors** (or **Workflows**)
-3. Search for **Incoming Webhook** → Configure
-4. Give it a name (e.g. `RTSPP Extract`) → **Create**
-5. Copy the webhook URL
-6. Open `rtspp_extract_v2.py` and paste the URL into:
-   ```python
-   TEAMS_WEBHOOK_URL = "https://your-tenant.webhook.office.com/..."
-   ```
+Teams alerts do not use a webhook. Instead, the script drops a small JSON file into a OneDrive for Business folder. A Power Automate flow watches that folder, reads the file, posts the Teams message, and deletes the file.
+
+### OneDrive Folder
+The script writes to:
+```
+C:\Users\XV1S\OneDrive - Vistra Corp\RTSPP Alerts
+```
+This folder is already created. The path is set in `rtspp_extract_v2.py` as `ONEDRIVE_ALERT_FOLDER`.
+
+### Power Automate Flow Steps
+| Step | Action | Key Setting |
+|------|--------|-------------|
+| 1 | When a file is created | Folder: `RTSPP Alerts` |
+| 2 | Get file content | File: from trigger |
+| 3 | Parse JSON | Content: file content; Schema: see below |
+| 4 | Post message in a chat or channel | Message: built from parsed JSON fields |
+| 5 | Delete file | File: from trigger |
+
+### Parse JSON Schema
+Paste this into the **Parse JSON** step → **Generate from sample** → or directly as the schema:
+```json
+{
+    "type": "object",
+    "properties": {
+        "status":     { "type": "string" },
+        "month":      { "type": "string" },
+        "from_date":  { "type": "string" },
+        "to_date":    { "type": "string" },
+        "workbook":   { "type": "string" },
+        "timestamp":  { "type": "string" },
+        "error":      {}
+    }
+}
+```
+
+### Suggested Teams Message (Step 4)
+**Success:**
+> **RTSPP Extract — Ready for Review**
+> Month: `[month]` | Range: `[from_date]` – `[to_date]`
+> Workbook saved. Open it to review, then run the Save step.
+> _(run at `[timestamp]`)_
+
+**Failure** (add a condition on `status` = `"failed"`):
+> **RTSPP Extract — FAILED**
+> Error: `[error]`
+> Manual intervention required. Run `run_rtspp_extract_v2.bat` to retry.
 
 ---
 
