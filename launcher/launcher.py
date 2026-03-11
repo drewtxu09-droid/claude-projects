@@ -198,5 +198,5 @@ def run_script(script_id):
         return jsonify({"ok": False, "error": str(e)})
 
 if __name__ == "__main__":
-    print("Launcher running at http://localhost:5050")
-    app.run(port=5050, debug=False)
+    print("Launcher running at http://localhost:5151")
+    app.run(port=5151, debug=False)
