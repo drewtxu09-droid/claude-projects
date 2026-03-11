@@ -54,6 +54,29 @@ Matches `Oncor_Res_example.xlsx` column structure:
 - Delete affected CSV(s) in `data/` so data regenerates with correct values
 - Kill existing server processes before restarting: `powershell -Command "Get-Process py,python | Stop-Process -Force"`
 
+## Script Launcher (`launcher/`)
+
+A Flask web app at `http://localhost:5050` with buttons to launch all project batch scripts.
+
+### Running
+```
+cd launcher
+run_launcher.bat
+```
+
+### Adding New Scripts
+**After building any new tool that includes a `.bat` file, always ask the user:**
+> "Would you like me to add this to the Script Launcher dashboard? I'll group it under [project name]."
+
+If yes, add a new entry to the `SCRIPTS` list in `launcher/launcher.py` with:
+- `id` — unique snake_case identifier
+- `group` — matches the existing project group name (or a new one if it's a new project)
+- `name` — short button label
+- `file` — the `.bat` filename
+- `dir` — absolute path using `os.path.join(BASE, "folder")`
+- `description` — one sentence explaining what the script does and any requirements
+- `color` — use the same color as other cards in the same group for consistency
+
 ## Git & GitHub
 
 - Remote: https://github.com/drewtxu09-droid/claude-projects
