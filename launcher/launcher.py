@@ -25,6 +25,7 @@ ICONS = {
     'eye':   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
     'alarm': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M5 3L2 6"/><path d="M22 6l-3-3"/></svg>',
     'timer': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="18.66" y1="5.34" x2="17.25" y2="6.75"/></svg>',
+    'db':    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>',
 }
 
 SCRIPTS = [
@@ -118,6 +119,16 @@ SCRIPTS = [
         "dir": os.path.join(BASE, "Price Comparison"),
         "description": "Register monitor task to run every 30 minutes",
         "icon": "timer",
+    },
+    {
+        "id": "pcrf_build_vbb",
+        "group": "PCRF",
+        "group_color": "#e11d48",
+        "name": "Build VBB Products",
+        "file": "run_build_vbb.bat",
+        "dir": os.path.join(BASE, "PCRF"),
+        "description": "Connect to SAP HANA and rebuild CREATE_NEW_VBB_PRODS using the 6-level cascade product code logic",
+        "icon": "db",
     },
 ]
 
