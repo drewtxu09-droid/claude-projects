@@ -1,36 +1,4 @@
 -- ============================================================
--- CREATE_NEW_VBB_PRODS_v2_HANA.sql
--- Run directly in SAP HANA Studio or SQL Console.
---
--- Execute all three sections in order:
---   Section 1 — Drop existing table (safe, no error if missing)
---   Section 2 — Build new table with 6-level cascade logic
---   Section 3 — Verify row count and preview results
---
--- New product code structure:
---   Chars  1-2  : TDU prefix       (from TBL100_TDU_PREFIX via NEW_PCRF_VBB.TDSP__C)
---   Chars  3-10 : Core descriptor  (from matched template or CODE_CORE__C if brand new)
---   Char   11   : Hierarchy        (always from NEW_PCRF_VBB.Hierarchy column)
---   Chars 12-13 : Term             (from NEW_PCRF_VBB.TERM__C, zero-padded to 2 digits)
---   Last 2 or 3 : Sequence suffix  (alpha: AA..ZZ | numeric: 001..677)
---
--- Cascade levels:
---   L1: Same TDSP + same name + same term + same hierarchy  → INCREMENT from existing
---   L2: Same TDSP + same name + same term + diff hierarchy  → RESET to AA / 001
---   L3: Same TDSP + same name + 12 or 24 month term        → RESET to AA / 001
---   L4: Any  TDSP + same name + same term                  → RESET to AA / 001 (cross-TDSP)
---   L5: Any  TDSP + same name + 12 or 24 month term        → RESET to AA / 001 (cross-TDSP)
---   L6: CODE_CORE__C populated in NEW_PCRF_VBB             → RESET to AA / 001 (brand new)
---
--- Prerequisites:
---   NEW_PCRF_VBB must have a CODE_CORE__C column (NVARCHAR 8).
---   Populate CODE_CORE__C only for truly brand-new products.
---   Leave NULL for all other rows — cascade derives core automatically.
---   Rows with no cascade match AND no CODE_CORE__C → PRODUCTCODE__C will be NULL.
--- ============================================================
-
-
--- ============================================================
 -- SECTION 1: Drop existing output table (safe — no error if absent)
 -- ============================================================
 DO BEGIN
@@ -44,10 +12,9 @@ DO BEGIN
     END IF;
 END;
 
+--DROP TABLE QRYBUILDSTEP2;
 
--- ============================================================
--- SECTION 2: Build CREATE_NEW_VBB_PRODS
--- ============================================================
+
 CREATE TABLE "XV1S"."CREATE_NEW_VBB_PRODS" AS (
 
 WITH
@@ -60,15 +27,17 @@ WITH
 --   - Assign row number per group (name + TDSP + term + hierarchy)
 --     so multiple new products in the same group each get a unique
 --     sequence increment
+--   - Derive BASE_NAME by stripping the trailing term number (e.g.
+--     "Basic 15" → "BASIC"), used for L6/L7 family-fallback lookups
 -- ============================================================
 NEW_PRODS AS (
     SELECT
         NP.PRODUCT_NAME__C,
-        NP.TERM__C,
-        NP.HIERARCHY,
-        NP.TDSP__C                              AS NEW_TDSP,
-        NP.CODE_CORE__C,
-        TDUP.TDU_PREFIX                         AS NEW_TDU_PREFIX,
+        NP."Term__C",
+        NP."Hierarchy",
+        NP.TDSP__C AS NEW_TDSP,
+        NP."Code_Core",
+        TDUP.TDU_PREFIX AS NEW_TDU_PREFIX,
         CASE
             WHEN UPPER(TRIM(NP.TDSP__C)) = 'ONC'  THEN 'ONCOR'
             WHEN UPPER(TRIM(NP.TDSP__C)) = 'CNP'  THEN 'CENTERPOINT'
@@ -81,10 +50,26 @@ NEW_PRODS AS (
         ROW_NUMBER() OVER (
             PARTITION BY NP.PRODUCT_NAME__C,
                          NP.TDSP__C,
-                         NP.TERM__C,
-                         NP.HIERARCHY
+                         NP."Term__C",
+                         NP."Hierarchy"
             ORDER BY NP.PRODUCT_NAME__C
-        )                                       AS INCR_COUNT
+        )                                       AS INCR_COUNT,
+
+        -- Base name: product name with trailing " {term}" stripped
+        -- e.g. "Basic 15" (Term=15) → "BASIC" for L6/L7 family-fallback
+        CASE
+            WHEN LENGTH(UPPER(TRIM(NP.PRODUCT_NAME__C)))
+                     > LENGTH(CAST(NP."Term__C" AS NVARCHAR)) + 1
+             AND SUBSTRING(UPPER(TRIM(NP.PRODUCT_NAME__C)),
+                           LENGTH(UPPER(TRIM(NP.PRODUCT_NAME__C)))
+                               - LENGTH(CAST(NP."Term__C" AS NVARCHAR)),
+                           1) = ' '
+                THEN UPPER(TRIM(SUBSTRING(NP.PRODUCT_NAME__C, 1,
+                         LENGTH(UPPER(TRIM(NP.PRODUCT_NAME__C)))
+                             - LENGTH(CAST(NP."Term__C" AS NVARCHAR)) - 1)))
+            ELSE UPPER(TRIM(NP.PRODUCT_NAME__C))
+        END                                     AS BASE_NAME
+
     FROM "XV1S"."NEW_PCRF_VBB"       NP
     JOIN "XV1S"."TBL100_TDU_PREFIX"  TDUP
       ON UPPER(TRIM(NP.TDSP__C)) = UPPER(TRIM(TDUP.TDU_AB))
@@ -126,6 +111,8 @@ SFDC_PRODS AS (
 --   L3 → same TDSP, same name, 12 or 24 month term        (RESET)
 --   L4 → any  TDSP, same name, same term                  (RESET, cross-TDSP)
 --   L5 → any  TDSP, same name, 12 or 24 month term        (RESET, cross-TDSP)
+--   L6 → same TDSP, base-name family, 12 or 24 month term (RESET, family fallback)
+--   L7 → any  TDSP, base-name family, 12 or 24 month term (RESET, family cross-TDSP)
 -- ============================================================
 MATCHED AS (
     SELECT
@@ -136,8 +123,8 @@ MATCHED AS (
            FROM SFDC_PRODS E
           WHERE E.PRODUCT_NAME__C = UPPER(TRIM(N.PRODUCT_NAME__C))
             AND E.TDSP__C         = N.NORM_TDSP
-            AND E.PRODUCT_TERM    = CAST(N.TERM__C AS NVARCHAR)
-            AND E.CODE_HIER       = N.HIERARCHY
+            AND E.PRODUCT_TERM    = CAST(N."Term__C" AS NVARCHAR)
+            AND E.CODE_HIER       = N."Hierarchy"
         ) AS L1_CODE,
 
         -- L2: Same TDSP | same name | same term | different hierarchy → RESET
@@ -145,8 +132,8 @@ MATCHED AS (
            FROM SFDC_PRODS E
           WHERE E.PRODUCT_NAME__C = UPPER(TRIM(N.PRODUCT_NAME__C))
             AND E.TDSP__C         = N.NORM_TDSP
-            AND E.PRODUCT_TERM    = CAST(N.TERM__C AS NVARCHAR)
-            AND E.CODE_HIER      != N.HIERARCHY
+            AND E.PRODUCT_TERM    = CAST(N."Term__C" AS NVARCHAR)
+            AND E.CODE_HIER      != N."Hierarchy"
         ) AS L2_CODE,
 
         -- L3: Same TDSP | same name | 12 or 24 month term | any hierarchy → RESET
@@ -161,7 +148,7 @@ MATCHED AS (
         (SELECT MAX(E.PRODUCTCODE__C)
            FROM SFDC_PRODS E
           WHERE E.PRODUCT_NAME__C = UPPER(TRIM(N.PRODUCT_NAME__C))
-            AND E.PRODUCT_TERM    = CAST(N.TERM__C AS NVARCHAR)
+            AND E.PRODUCT_TERM    = CAST(N."Term__C" AS NVARCHAR)
         ) AS L4_CODE,
 
         -- L5: Any TDSP | same name | 12 or 24 month term | any hierarchy → RESET (cross-TDSP fallback)
@@ -169,7 +156,26 @@ MATCHED AS (
            FROM SFDC_PRODS E
           WHERE E.PRODUCT_NAME__C = UPPER(TRIM(N.PRODUCT_NAME__C))
             AND E.PRODUCT_TERM    IN ('12', '24')
-        ) AS L5_CODE
+        ) AS L5_CODE,
+
+        -- L6: Same TDSP | base-name family | 12 or 24 month term → RESET (family fallback)
+        --   Extra check: char after base name must be a digit (e.g. 'BASIC 12' yes, 'BASIC PLUS 24' no)
+        --   This prevents "Basic" from accidentally matching "Basic Plus" products
+        (SELECT MAX(E.PRODUCTCODE__C)
+           FROM SFDC_PRODS E
+          WHERE E.PRODUCT_NAME__C LIKE N.BASE_NAME || ' %'
+            AND SUBSTRING(E.PRODUCT_NAME__C, LENGTH(N.BASE_NAME) + 2, 1) BETWEEN '0' AND '9'
+            AND E.TDSP__C         = N.NORM_TDSP
+            AND E.PRODUCT_TERM    IN ('12', '24')
+        ) AS L6_CODE,
+
+        -- L7: Any TDSP | base-name family | 12 or 24 month term → RESET (family cross-TDSP fallback)
+        (SELECT MAX(E.PRODUCTCODE__C)
+           FROM SFDC_PRODS E
+          WHERE E.PRODUCT_NAME__C LIKE N.BASE_NAME || ' %'
+            AND SUBSTRING(E.PRODUCT_NAME__C, LENGTH(N.BASE_NAME) + 2, 1) BETWEEN '0' AND '9'
+            AND E.PRODUCT_TERM    IN ('12', '24')
+        ) AS L7_CODE
 
     FROM NEW_PRODS N
 ),
@@ -181,7 +187,7 @@ MATCHED AS (
 --
 --   TEMPLATE_CODE : first non-null code from L1→L5
 --   SUFFIX_MODE   : INCREMENT (L1 matched) or RESET (all others)
---   CORE_CHARS    : chars 3-10 — from CODE_CORE__C if brand new,
+--   CORE_CHARS    : chars 3-10 — from Code_Core if brand new,
 --                   else extracted from TEMPLATE_CODE
 --   SUFFIX_TYPE   : ALPHA (ends in letter) or NUM (ends in digit)
 --   BASE_ORDER    : position in PROD_NAMING_SEQ to increment from
@@ -192,7 +198,8 @@ RESOLVED AS (
         M.*,
 
         COALESCE(M.L1_CODE, M.L2_CODE, M.L3_CODE,
-                 M.L4_CODE, M.L5_CODE)              AS TEMPLATE_CODE,
+                 M.L4_CODE, M.L5_CODE,
+                 M.L6_CODE, M.L7_CODE)              AS TEMPLATE_CODE,
 
         CASE
             WHEN M.L1_CODE IS NOT NULL THEN 'INCREMENT'
@@ -201,24 +208,29 @@ RESOLVED AS (
 
         -- Core chars 3-10
         CASE
-            WHEN M.CODE_CORE__C IS NOT NULL
-                THEN M.CODE_CORE__C
+            WHEN M."Code_Core" IS NOT NULL AND M."Code_Core" <> ''
+                THEN M."Code_Core"
             WHEN COALESCE(M.L1_CODE, M.L2_CODE, M.L3_CODE,
-                          M.L4_CODE, M.L5_CODE) IS NOT NULL
+                          M.L4_CODE, M.L5_CODE,
+                          M.L6_CODE, M.L7_CODE) IS NOT NULL
                 THEN SUBSTRING(
                          COALESCE(M.L1_CODE, M.L2_CODE, M.L3_CODE,
-                                  M.L4_CODE, M.L5_CODE), 3, 8)
+                                  M.L4_CODE, M.L5_CODE,
+                                  M.L6_CODE, M.L7_CODE), 3, 8)
             ELSE NULL
         END                                          AS CORE_CHARS,
 
         -- Suffix type from template (defaults to ALPHA for brand-new)
         CASE
             WHEN COALESCE(M.L1_CODE, M.L2_CODE, M.L3_CODE,
-                          M.L4_CODE, M.L5_CODE) IS NOT NULL
+                          M.L4_CODE, M.L5_CODE,
+                          M.L6_CODE, M.L7_CODE) IS NOT NULL
              AND SUBSTRING(COALESCE(M.L1_CODE, M.L2_CODE, M.L3_CODE,
-                                    M.L4_CODE, M.L5_CODE),
+                                    M.L4_CODE, M.L5_CODE,
+                                    M.L6_CODE, M.L7_CODE),
                            LENGTH(COALESCE(M.L1_CODE, M.L2_CODE, M.L3_CODE,
-                                           M.L4_CODE, M.L5_CODE)), 1)
+                                           M.L4_CODE, M.L5_CODE,
+                                           M.L6_CODE, M.L7_CODE)), 1)
                  BETWEEN '0' AND '9'
                 THEN 'NUM'
             ELSE 'ALPHA'
@@ -237,7 +249,7 @@ RESOLVED AS (
                  BETWEEN '0' AND '9'
                 THEN (SELECT S."ORDER_NUM"
                         FROM "XV1S"."PROD_NAMING_SEQ" S
-                       WHERE S."CURRENT_NUM" = RIGHT(M.L1_CODE, 3))
+                       WHERE LPAD(CAST(S."CURRENT_NUM" AS NVARCHAR), 3, '0') = RIGHT(M.L1_CODE, 3))
             ELSE 0
         END                                          AS BASE_ORDER
 
@@ -249,21 +261,21 @@ RESOLVED AS (
 --   Assemble the final product code:
 --     NEW_TDU_PREFIX  (chars 1-2)
 --     CORE_CHARS      (chars 3-10)
---     HIERARCHY       (char 11)  ← always from NEW_PCRF_VBB.Hierarchy
+--     "Hierarchy"     (char 11)  ← always from NEW_PCRF_VBB."Hierarchy"
 --     LPAD(TERM,2,'0')(chars 12-13)
 --     SEQUENCE SUFFIX (chars 14-15 alpha or 14-16 numeric)
 --       looked up in PROD_NAMING_SEQ at position BASE_ORDER + INCR_COUNT
 --
 --   NULL PRODUCTCODE__C means no template was found and
---   CODE_CORE__C was not provided — requires manual resolution.
+--   Code_Core was not provided — requires manual resolution.
 -- ============================================================
 BUILT AS (
     SELECT
         R.PRODUCT_NAME__C,
-        R.TERM__C,
+        R."Term__C",
         R.NEW_TDSP                                  AS NTDSP,
         R.NORM_TDSP                                 AS GTDSP,
-        R.HIERARCHY,
+        R."Hierarchy",
         R.TEMPLATE_CODE                             AS EXISTING_PRODUCTCODE__C,
         R.SUFFIX_MODE,
         R.INCR_COUNT,
@@ -277,8 +289,8 @@ BUILT AS (
             WHEN R.SUFFIX_TYPE = 'ALPHA'
                 THEN R.NEW_TDU_PREFIX
                   || R.CORE_CHARS
-                  || R.HIERARCHY
-                  || LPAD(CAST(R.TERM__C AS NVARCHAR), 2, '0')
+                  || R."Hierarchy"
+                  || LPAD(CAST(R."Term__C" AS NVARCHAR), 2, '0')
                   || (SELECT S."CURRENT"
                         FROM "XV1S"."PROD_NAMING_SEQ" S
                        WHERE S."ORDER" = R.BASE_ORDER + R.INCR_COUNT)
@@ -287,11 +299,12 @@ BUILT AS (
             ELSE
                  R.NEW_TDU_PREFIX
               || R.CORE_CHARS
-              || R.HIERARCHY
-              || LPAD(CAST(R.TERM__C AS NVARCHAR), 2, '0')
-              || (SELECT S."CURRENT_NUM"
-                    FROM "XV1S"."PROD_NAMING_SEQ" S
-                   WHERE S."ORDER_NUM" = R.BASE_ORDER + R.INCR_COUNT)
+              || R."Hierarchy"
+              || LPAD(CAST(R."Term__C" AS NVARCHAR), 2, '0')
+              || LPAD(CAST((SELECT S."CURRENT_NUM"
+                              FROM "XV1S"."PROD_NAMING_SEQ" S
+                             WHERE S."ORDER_NUM" = R.BASE_ORDER + R.INCR_COUNT)
+                    AS NVARCHAR), 3, '0')
         END                                         AS PRODUCTCODE__C
 
     FROM RESOLVED R
@@ -299,7 +312,7 @@ BUILT AS (
 
 -- ============================================================
 -- Final SELECT
---   SUFFIX_MODE, HIERARCHY, TERM__C, INCR_COUNT are diagnostic
+--   SUFFIX_MODE, "Hierarchy", "Term__C", INCR_COUNT are diagnostic
 --   columns included to aid first-run validation.
 -- ============================================================
 SELECT
@@ -307,8 +320,8 @@ SELECT
     B.EXISTING_PRODUCTCODE__C,
     B.NTDSP,
     B.GTDSP,
-    B.HIERARCHY,
-    B.TERM__C,
+    B."Hierarchy",
+    B."Term__C",
     B.SUFFIX_MODE,
     B.INCR_COUNT,
     B.PRODUCTCODE__C
@@ -325,8 +338,8 @@ ORDER BY
         WHEN B.NTDSP = 'ALL'  THEN 7
         ELSE 8
     END,
-    B.TERM__C,
-    B.HIERARCHY,
+    B."Term__C",
+    B."Hierarchy",
     B.INCR_COUNT
 
 );
@@ -344,8 +357,8 @@ FROM "XV1S"."CREATE_NEW_VBB_PRODS";
 SELECT
     PRODUCT_NAME__C,
     NTDSP,
-    TERM__C,
-    HIERARCHY,
+    "Term__C",
+    "Hierarchy",
     EXISTING_PRODUCTCODE__C,
     SUFFIX_MODE
 FROM "XV1S"."CREATE_NEW_VBB_PRODS"
@@ -367,6 +380,6 @@ ORDER BY
         WHEN NTDSP = 'ALL'  THEN 7
         ELSE 8
     END,
-    TERM__C,
-    HIERARCHY,
+    "Term__C",
+    "Hierarchy",
     INCR_COUNT;

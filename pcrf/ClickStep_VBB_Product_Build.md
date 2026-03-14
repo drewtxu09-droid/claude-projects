@@ -1,20 +1,22 @@
 # Click-Step Guide — VBB PCRF Product Code Build
-**Version:** 1.0
-**Date:** 2026-03-11
+**Version:** 2.0
+**Date:** 2026-03-13
 
 ---
 
 ## Before You Start — Checklist
 
 - [ ] `NEW_PCRF_VBB.xlsx` is up to date and uploaded to SAP HANA (schema: XV1S)
-- [ ] Every row has matching `PRODUCT_NAME__C` and `TERM__C` (e.g., "Basic 12" → Term = 12)
-- [ ] Brand-new products (no SFDC match) have `CODE_CORE__C` filled in (8 characters)
+- [ ] Every row has matching `PRODUCT_NAME__C` and `Term__C` (e.g., "Basic 12" → Term = 12)
+- [ ] Brand-new products (no SFDC match under any TDSP, term, or product family) have `Code_Core` filled in (exactly 8 characters)
+- [ ] All other rows have `Code_Core` left **blank** (not the word "NULL")
 - [ ] `config-HANA-Prod.yaml` is in `C:\Users\XV1S\Desktop\Claude\`
 
 ---
 
 ## Step 1 — Run the Build
 
+**Option A — Batch file**
 1. Open File Explorer
 2. Navigate to: `C:\Users\XV1S\Desktop\Claude\PCRF\`
 3. Double-click **`run_build_vbb.bat`**
@@ -34,6 +36,12 @@ PRODUCT_NAME__C  EXISTING_PRODUCTCODE__C  NTDSP  GTDSP  ...
 ```
 
 5. Press any key to close the terminal when done
+
+**Option B — SAP HANA Studio (direct)**
+1. Open SAP HANA Studio and connect to the production system
+2. Open `CREATE_NEW_VBB_PRODS_v2_HANA.sql` from `C:\Users\XV1S\Desktop\Claude\PCRF\`
+3. Select all (Ctrl+A) and run (F8)
+4. The script drops, rebuilds, and verifies the table in one pass
 
 ---
 
@@ -60,24 +68,24 @@ PRODUCT_NAME__C  EXISTING_PRODUCTCODE__C  NTDSP  GTDSP  ...
 
 5. Spot-check a few codes:
    - Chars 1–2 = correct TDU prefix for that TDSP?
-   - Char 11 = `A` (the Hierarchy value)?
-   - Chars 12–13 = correct term digits?
+   - Char 11 = matches the `Hierarchy` value for that row?
+   - Chars 12–13 = correct term digits (zero-padded)?
 
 ---
 
 ## Step 3 — Fix NULL Product Codes (if needed)
 
-**If the product is truly brand new (never existed in SFDC under any TDSP):**
+**If the product is truly brand new (never existed in SFDC under any TDSP, term, or related product family):**
 1. Open `NEW_PCRF_VBB.xlsx`
 2. Find the row(s) with NULL codes
-3. Fill in `CODE_CORE__C` with exactly 8 characters (positions 3–10 of the desired code)
+3. Fill in `Code_Core` with exactly 8 characters (positions 3–10 of the desired code)
 4. Re-upload `NEW_PCRF_VBB` to SAP HANA
 5. Go back to **Step 1** and re-run
 
 **If it's a name or term mismatch:**
 1. Open `NEW_PCRF_VBB.xlsx`
 2. Correct `PRODUCT_NAME__C` to exactly match the name in SFDC
-3. Correct `TERM__C` to match the term in the product name
+3. Correct `Term__C` to match the term in the product name
 4. Re-upload and re-run from **Step 1**
 
 ---
@@ -105,12 +113,14 @@ PRODUCT_NAME__C  EXISTING_PRODUCTCODE__C  NTDSP  GTDSP  ...
 
 ## Quick Reference — Cascade Match Summary
 
-| What exists in SFDC | Result |
-|---|---|
-| Same TDSP + same name + same term + same hierarchy | New code = next in sequence after existing |
-| Same TDSP + same name + same term + different hierarchy | New code = AA (uses same TDSP as template) |
-| Same TDSP + same name + 12 or 24 month term | New code = AA (uses same TDSP as template) |
-| Different TDSP + same name + same term | New code = AA (cross-TDSP template, new TDU prefix applied) |
-| Different TDSP + same name + 12 or 24 month term | New code = AA (cross-TDSP template, new TDU prefix applied) |
-| Nothing found + CODE_CORE__C filled in | New code = AA (built from scratch) |
-| Nothing found + CODE_CORE__C blank | PRODUCTCODE__C = NULL → manual fix required |
+| What exists in SFDC | Level | Result |
+|---|---|---|
+| Same TDSP + same name + same term + same hierarchy | L1 | New code = next in sequence after existing |
+| Same TDSP + same name + same term + different hierarchy | L2 | New code = AA (uses same TDSP as template) |
+| Same TDSP + same name + 12 or 24 month term | L3 | New code = AA (uses same TDSP as template) |
+| Different TDSP + same name + same term | L4 | New code = AA (cross-TDSP template, new TDU prefix applied) |
+| Different TDSP + same name + 12 or 24 month term | L5 | New code = AA (cross-TDSP template, new TDU prefix applied) |
+| Same TDSP + same product family (e.g., "Basic") + 12 or 24 month term | L6 | New code = AA (family fallback, same TDSP) |
+| Any TDSP + same product family + 12 or 24 month term | L7 | New code = AA (family fallback, cross-TDSP) |
+| Nothing found + `Code_Core` filled in | — | New code = AA (built from scratch) |
+| Nothing found + `Code_Core` blank | — | PRODUCTCODE__C = NULL → manual fix required |
